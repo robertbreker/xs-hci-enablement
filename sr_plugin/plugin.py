@@ -221,6 +221,17 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
         elif cmd == 'vdi_deactivate':
             Datapath().deactivate(dbg, vdi_location, 0)
             print nil
+        elif cmd == 'vdi_resize':
+            size = long(params['args'][0])
+            Volume().resize(dbg, sr_uuid, vdi_uuid, size)
+            sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
+            vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
+            sr_update(sr_ref)
+            session.xenapi.VDI.set_virtual_size(vdi_ref, str(size))
+            session.xenapi.VDI.set_physical_utilisation(vdi_ref, str(size))
+            struct = { 'location': vdi_location,
+                       'uuid': vdi_uuid }
+            print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_update':
             vdi_update()
             print nil
