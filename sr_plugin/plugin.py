@@ -1,3 +1,23 @@
+"""
+ Copyright (C) Citrix Systems Inc.
+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU Lesser General Public License as published
+ by the Free Software Foundation; version 2.1 only.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Lesser General Public License for more details.
+
+ You should have received a copy of the GNU Lesser General Public License
+ along with this program; if not, write to the Free Software Foundation, Inc.,
+ 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+ plugin: A SMAPIv3 to SMAPIv1 conversion layer that allows writing SMAPIv3
+         style SRs
+"""
+
 import errno
 import exceptions
 import subprocess
@@ -159,7 +179,7 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             path = attach['implementation'][1]
             struct = {'params': path, 'xenstore_data': {}}
             print xmlrpclib.dumps((struct,), "", True)
-        elif cmd == 'vdi_detach':
+        elif cmd in ('vdi_detach', 'vdi_detach_from_config'):
             Datapath().detach(dbg, vdi_location, 0)
             print nil
         elif cmd == 'vdi_activate':
