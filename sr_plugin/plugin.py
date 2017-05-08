@@ -233,8 +233,8 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             sr_update(sr_ref)
             session.xenapi.VDI.set_virtual_size(vdi_ref, str(size))
             session.xenapi.VDI.set_physical_utilisation(vdi_ref, str(size))
-            struct = { 'location': vdi_location,
-                       'uuid': vdi_uuid }
+            struct = {'location': vdi_location,
+                      'uuid': vdi_uuid}
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_update':
             vdi_update()
