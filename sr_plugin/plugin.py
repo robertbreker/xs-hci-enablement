@@ -27,8 +27,8 @@ import traceback
 import xmlrpclib
 import XenAPI
 
-MIN_VDI_SIZE = 512                            #512 bytes 
-MAX_VDI_SIZE = 16 * 1024 * 1024 * 1024 * 1024 #16TB
+MIN_VDI_SIZE = 512  # 512 bytes
+MAX_VDI_SIZE = 16 * 1024 * 1024 * 1024 * 1024  # 16TB
 
 
 def log(message, level=syslog.LOG_INFO):
@@ -109,6 +109,25 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
                 sr_ref, str(stats["physical_size"]))
             session.xenapi.SR.set_physical_utilisation(
                 sr_ref, str(stats["physical_utilisation"]))
+
+        def vdi_update():
+            vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
+            # Update name and description
+            name = session.xenapi.VDI.get_name_label(vdi_ref)
+            description = session.xenapi.VDI.get_name_description(vdi_ref)
+            # Get volume stats and update XAPI
+            stats = Volume().stat(dbg, sr_uuid, vdi_uuid)
+            if 'virtual_size' in stats:
+                session.xenapi.VDI.set_virtual_size(vdi_ref,
+                                                    str(stats["virtual_size"]))
+            if 'physical_utilisation' in stats:
+                session.xenapi.VDI.set_physical_utilisation(
+                    vdi_ref, str(stats["physical_utilisation"]))
+            # Update the on-disk name and description if needed
+            if name != stats['name']:
+                Volume().set_name(dbg, sr_uuid, vdi_uuid, name)
+            if description != stats['description']:
+                Volume().set_description(dbg, sr_uuid, vdi_uuid, description)
 
         def gen_uuid():
             return subprocess.Popen(["uuidgen", "-r"],
@@ -201,6 +220,9 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             print nil
         elif cmd == 'vdi_deactivate':
             Datapath().deactivate(dbg, vdi_location, 0)
+            print nil
+        elif cmd == 'vdi_update':
+            vdi_update()
             print nil
         else:
             fault = xmlrpclib.Fault(int(errno.EINVAL),
