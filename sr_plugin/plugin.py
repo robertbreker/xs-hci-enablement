@@ -109,18 +109,22 @@ def gen_uuid():
                             ).communicate()[0].strip()
 
 
-def main(SR, Volume, Datapath, DRIVER_INFO):
+def main(Plugin, SR, Volume, Datapath):
     try:
+        dbg = "Dummy"
+
         params, cmd = xmlrpclib.loads(sys.argv[1])
 
         if cmd == 'sr_get_driver_info':
             results = {}
-            for key in ['name', 'description', 'vendor', 'copyright',
-                        'driver_version', 'required_api_version',
-                        'capabilities']:
-                results[key] = DRIVER_INFO[key]
+            query_result = Plugin().query(dbg)
+            for key in ['name', 'description', 'vendor', 'copyright']:
+                results[key] = query_result[key]
+            results['driver_version'] = query_result['version']
+            results['capabilities'] = query_result['features']
+            results['required_api_version'] = '1.0'
             options = []
-            for option in DRIVER_INFO['configuration']:
+            for option in []:
                 options.append({'key': option[0], 'description': option[1]})
             results['configuration'] = options
             print xmlrpclib.dumps((results,), "", True)
@@ -135,7 +139,6 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
         if 'vdi_location' in params:
             vdi_location = params['vdi_location']
 
-        dbg = "Dummy"
         session = XenAPI.xapi_local()
         session._session = params['session_ref']
 
