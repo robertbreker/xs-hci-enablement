@@ -27,6 +27,9 @@ import traceback
 import xmlrpclib
 import XenAPI
 
+MIN_VDI_SIZE = 512                            #512 bytes 
+MAX_VDI_SIZE = 16 * 1024 * 1024 * 1024 * 1024 #16TB
+
 
 def log(message, level=syslog.LOG_INFO):
     syslog.openlog(None, syslog.LOG_PID, syslog.LOG_LOCAL2)
@@ -148,6 +151,9 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             print nil
         elif cmd == 'vdi_create':
             size = long(params['args'][0])
+            if (size <= MIN_VDI_SIZE) or (size > MAX_VDI_SIZE):
+                raise Exception("Invalid VDI size. "
+                                "Size must be between 512 bytes and 16TiB")
             label = params['args'][1]
             description = params['args'][2]
             # read_only = params['args'][7] == "true"
@@ -208,4 +214,7 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             sys.exit(0)
         tb = "\n".join(traceback.format_tb(info[2]))
         fault = xmlrpclib.Fault(int(errno.EINVAL), str(e) + "\n" + tb)
-        print xmlrpclib.dumps(fault, "", True)
+        # errmsg = xmlrpclib.dumps(xmlrpclib.Fault(int(errno.EINVAL),
+        #                          str(e)), "", True)
+        error_xml = xmlrpclib.dumps(fault, "", True)
+        print error_xml
