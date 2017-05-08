@@ -1,3 +1,13 @@
+import errno
+import exceptions
+import subprocess
+import sys
+import traceback
+import xmlrpclib
+import XenAPI
+
+
+def main(SR, Volume, Datapath, DRIVER_INFO):
     try:
         params, cmd = xmlrpclib.loads(sys.argv[1])
 
@@ -43,9 +53,9 @@
             session.xenapi.VDI.db_forget(vdi)
         def sr_update(sr_ref):
             stats = SR().stat(dbg, sr_uuid)
-            self.session.xenapi.SR.set_virtual_allocation(sr_ref, str(stats["virtual_allocation"]))
-            self.session.xenapi.SR.set_physical_size(sr_ref, str(stats["physical_size"]))
-            self.session.xenapi.SR.set_physical_utilisation(sr_ref, str(stats["physical_utilisation"]))
+            session.xenapi.SR.set_virtual_allocation(sr_ref, str(stats["virtual_allocation"]))
+            session.xenapi.SR.set_physical_size(sr_ref, str(stats["physical_size"]))
+            session.xenapi.SR.set_physical_utilisation(sr_ref, str(stats["physical_utilisation"]))
         def gen_uuid():
             return subprocess.Popen(["uuidgen", "-r"], stdout=subprocess.PIPE).communicate()[0].strip()
         nil = xmlrpclib.dumps((None,), "", True, allow_none=True)
