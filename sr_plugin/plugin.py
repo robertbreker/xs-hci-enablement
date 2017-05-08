@@ -22,9 +22,16 @@ import errno
 import exceptions
 import subprocess
 import sys
+import syslog
 import traceback
 import xmlrpclib
 import XenAPI
+
+
+def log(message, level=syslog.LOG_INFO):
+    syslog.openlog(None, syslog.LOG_PID, syslog.LOG_LOCAL2)
+    syslog.syslog(level, message)
+    syslog.closelog()
 
 
 def main(SR, Volume, Datapath, DRIVER_INFO):
