@@ -37,6 +37,78 @@ def log(message, level=syslog.LOG_INFO):
     syslog.closelog()
 
 
+def db_introduce(session, sr_uuid,  v, uuid):
+    sm_config = {}
+    ty = "user"
+    is_a_snapshot = False
+    metadata_of_pool = "OpaqueRef:NULL"
+    snapshot_time = "19700101T00:00:00Z"
+    snapshot_of = "OpaqueRef:NULL"
+    shareable = True
+    sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
+    read_only = False
+    managed = True
+    session.xenapi.VDI.db_introduce(uuid,
+                                    v['name'],
+                                    v['description'],
+                                    sr_ref,
+                                    ty,
+                                    shareable,
+                                    read_only,
+                                    {},
+                                    v['uri'][0],
+                                    {},
+                                    sm_config,
+                                    managed,
+                                    str(v['virtual_size']),
+                                    str(v['virtual_size']),
+                                    metadata_of_pool,
+                                    is_a_snapshot,
+                                    xmlrpclib.DateTime(snapshot_time),
+                                    snapshot_of)
+
+
+def db_forget(session, uuid):
+    vdi = session.xenapi.VDI.get_by_uuid(uuid)
+    session.xenapi.VDI.db_forget(vdi)
+
+
+def sr_update(session, dbg, SR, sr_uuid, sr_ref):
+    stats = SR().stat(dbg, sr_uuid)
+    session.xenapi.SR.set_virtual_allocation(
+        sr_ref, str(stats["virtual_allocation"]))
+    session.xenapi.SR.set_physical_size(
+        sr_ref, str(stats["physical_size"]))
+    session.xenapi.SR.set_physical_utilisation(
+        sr_ref, str(stats["physical_utilisation"]))
+
+
+def vdi_update(session, dbg, Volume, sr_uuid, vdi_uuid):
+    vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
+    # Update name and description
+    name = session.xenapi.VDI.get_name_label(vdi_ref)
+    description = session.xenapi.VDI.get_name_description(vdi_ref)
+    # Get volume stats and update XAPI
+    stats = Volume().stat(dbg, sr_uuid, vdi_uuid)
+    if 'virtual_size' in stats:
+        session.xenapi.VDI.set_virtual_size(vdi_ref,
+                                            str(stats["virtual_size"]))
+    if 'physical_utilisation' in stats:
+        session.xenapi.VDI.set_physical_utilisation(
+            vdi_ref, str(stats["physical_utilisation"]))
+    # Update the on-disk name and description if needed
+    if name != stats['name']:
+        Volume().set_name(dbg, sr_uuid, vdi_uuid, name)
+    if description != stats['description']:
+        Volume().set_description(dbg, sr_uuid, vdi_uuid, description)
+
+
+def gen_uuid():
+    return subprocess.Popen(["uuidgen", "-r"],
+                            stdout=subprocess.PIPE
+                            ).communicate()[0].strip()
+
+
 def main(SR, Volume, Datapath, DRIVER_INFO):
     try:
         params, cmd = xmlrpclib.loads(sys.argv[1])
@@ -67,79 +139,13 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
         session = XenAPI.xapi_local()
         session._session = params['session_ref']
 
-        def db_introduce(v, uuid):
-            sm_config = {}
-            ty = "user"
-            is_a_snapshot = False
-            metadata_of_pool = "OpaqueRef:NULL"
-            snapshot_time = "19700101T00:00:00Z"
-            snapshot_of = "OpaqueRef:NULL"
-            shareable = True
-            sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
-            read_only = False
-            managed = True
-            session.xenapi.VDI.db_introduce(uuid,
-                                            v['name'],
-                                            v['description'],
-                                            sr_ref,
-                                            ty,
-                                            shareable,
-                                            read_only,
-                                            {},
-                                            v['uri'][0],
-                                            {},
-                                            sm_config,
-                                            managed,
-                                            str(v['virtual_size']),
-                                            str(v['virtual_size']),
-                                            metadata_of_pool,
-                                            is_a_snapshot,
-                                            xmlrpclib.DateTime(snapshot_time),
-                                            snapshot_of)
-
-        def db_forget(uuid):
-            vdi = session.xenapi.VDI.get_by_uuid(uuid)
-            session.xenapi.VDI.db_forget(vdi)
-
-        def sr_update(sr_ref):
-            stats = SR().stat(dbg, sr_uuid)
-            session.xenapi.SR.set_virtual_allocation(
-                sr_ref, str(stats["virtual_allocation"]))
-            session.xenapi.SR.set_physical_size(
-                sr_ref, str(stats["physical_size"]))
-            session.xenapi.SR.set_physical_utilisation(
-                sr_ref, str(stats["physical_utilisation"]))
-
-        def vdi_update():
-            vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
-            # Update name and description
-            name = session.xenapi.VDI.get_name_label(vdi_ref)
-            description = session.xenapi.VDI.get_name_description(vdi_ref)
-            # Get volume stats and update XAPI
-            stats = Volume().stat(dbg, sr_uuid, vdi_uuid)
-            if 'virtual_size' in stats:
-                session.xenapi.VDI.set_virtual_size(vdi_ref,
-                                                    str(stats["virtual_size"]))
-            if 'physical_utilisation' in stats:
-                session.xenapi.VDI.set_physical_utilisation(
-                    vdi_ref, str(stats["physical_utilisation"]))
-            # Update the on-disk name and description if needed
-            if name != stats['name']:
-                Volume().set_name(dbg, sr_uuid, vdi_uuid, name)
-            if description != stats['description']:
-                Volume().set_description(dbg, sr_uuid, vdi_uuid, description)
-
-        def gen_uuid():
-            return subprocess.Popen(["uuidgen", "-r"],
-                                    stdout=subprocess.PIPE
-                                    ).communicate()[0].strip()
         nil = xmlrpclib.dumps((None,), "", True, allow_none=True)
         if cmd == 'sr_create':
             SR().create(dbg, sr_uuid, dconf)
             print nil
         elif cmd == 'sr_delete':
             SR().destroy(dbg, sr_uuid)
-            db_forget(vdi_uuid)
+            db_forget(session, vdi_uuid)
             print nil
         elif cmd == 'sr_scan':
             sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
@@ -155,12 +161,13 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             xenapi_locations = set(xenapi_location_map.keys())
             volume_locations = set(volume_location_map.keys())
             for new in volume_locations.difference(xenapi_locations):
-                db_introduce(volume_location_map[new], gen_uuid())
+                db_introduce(session, sr_uuid, volume_location_map[new],
+                             gen_uuid())
             for gone in xenapi_locations.difference(volume_locations):
-                db_forget(xenapi_location_map[gone]['uuid'])
+                db_forget(session, xenapi_location_map[gone]['uuid'])
             for existing in volume_locations.intersection(xenapi_locations):
                 pass
-            sr_update(sr_ref)
+            sr_update(session, dbg, SR, sr_uuid, sr_ref)
             print nil
         elif cmd == 'sr_attach':
             SR().attach(dbg, sr_uuid)
@@ -170,7 +177,7 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             print nil
         elif cmd == 'sr_update':
             sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
-            sr_update(sr_ref)
+            sr_update(session, dbg, SR, sr_uuid, sr_ref)
             print nil
         elif cmd == 'vdi_create':
             size = long(params['args'][0])
@@ -182,7 +189,7 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             # read_only = params['args'][7] == "true"
             v = Volume().create(dbg, sr_uuid, label, description, size)
             uuid = gen_uuid()
-            db_introduce(v, uuid)
+            db_introduce(session, sr_uuid, v, uuid)
             struct = {
                 'location': v.uri,
                 'uuid': uuid
@@ -194,7 +201,7 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
         elif cmd == 'vdi_clone':
             v = Volume().clone(dbg, sr_uuid, vdi_location)
             uuid = gen_uuid()
-            db_introduce(v, uuid)
+            db_introduce(session, sr_uuid, v, uuid)
             struct = {
                 'location': v.uri,
                 'uuid': uuid
@@ -203,7 +210,7 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
         elif cmd == 'vdi_snapshot':
             v = Volume().snapshot(dbg, sr_uuid, vdi_location)
             uuid = gen_uuid()
-            db_introduce(v, uuid)
+            db_introduce(session, sr_uuid, v, uuid)
             struct = {
                 'location': v.uri,
                 'uuid': uuid
@@ -230,14 +237,14 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
             Volume().resize(dbg, sr_uuid, vdi_uuid, size)
             sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
             vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
-            sr_update(sr_ref)
+            sr_update(session, dbg, SR, sr_uuid, sr_ref)
             session.xenapi.VDI.set_virtual_size(vdi_ref, str(size))
             session.xenapi.VDI.set_physical_utilisation(vdi_ref, str(size))
             struct = {'location': vdi_location,
                       'uuid': vdi_uuid}
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_update':
-            vdi_update()
+            vdi_update(session, dbg, Volume, sr_uuid, vdi_uuid)
             print nil
         elif cmd in ['vdi_epoch_begin', 'vdi_epoch_end']:
             print nil
