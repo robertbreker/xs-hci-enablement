@@ -168,6 +168,10 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
         elif cmd == 'sr_detach':
             SR().detach(dbg, sr_uuid)
             print nil
+        elif cmd == 'sr_update':
+            sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
+            sr_update(sr_ref)
+            print nil
         elif cmd == 'vdi_create':
             size = long(params['args'][0])
             if (size <= MIN_VDI_SIZE) or (size > MAX_VDI_SIZE):
