@@ -224,6 +224,8 @@ def main(SR, Volume, Datapath, DRIVER_INFO):
         elif cmd == 'vdi_update':
             vdi_update()
             print nil
+        elif cmd in ['vdi_epoch_begin', 'vdi_epoch_end']:
+            print nil
         else:
             fault = xmlrpclib.Fault(int(errno.EINVAL),
                                     "Unimplemented command: %s" % cmd,
