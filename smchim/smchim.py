@@ -79,23 +79,31 @@ def db_forget(session, uuid):
 
 def sr_update(session, dbg, SR, sr_uuid, sr_ref):
     sr_string = read_store(sr_uuid)
+    # Get SR stats and update XAPI
     stats = SR().stat(dbg, sr_string)
-    # ToDo: calculate virtual allocation
+    # Setting to 0 means that XAPI calculates virtual allocation itself
     session.xenapi.SR.set_virtual_allocation(
         sr_ref, str(0))
     session.xenapi.SR.set_physical_size(
         sr_ref, str(stats["total_space"]))
     session.xenapi.SR.set_physical_utilisation(
         sr_ref, str(stats["total_space"]-stats["free_space"]))
+    # Update the on-disk name and description if needed
+    if 'set_name' in SR:
+        name = session.xenapi.SR.get_name_label(sr_ref)
+        if name != stats['name']:
+            SR().set_name(dbg, sr_string, name)
+    if 'set_description' in SR:
+        description = session.xenapi.SR.get_name_description(sr_ref)
+        if description != stats['description']:
+            SR().set_description(dbg, sr_string, description)
 
 
 def vdi_update(session, dbg, Volume, sr_uuid, vdi_uuid):
     vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
-    # Update name and description
-    name = session.xenapi.VDI.get_name_label(vdi_ref)
-    description = session.xenapi.VDI.get_name_description(vdi_ref)
+    sr_string = read_store(sr_uuid)
     # Get volume stats and update XAPI
-    stats = Volume().stat(dbg, sr_uuid, vdi_uuid)
+    stats = Volume().stat(dbg, sr_string, vdi_uuid)
     if 'virtual_size' in stats:
         session.xenapi.VDI.set_virtual_size(vdi_ref,
                                             str(stats["virtual_size"]))
@@ -103,10 +111,12 @@ def vdi_update(session, dbg, Volume, sr_uuid, vdi_uuid):
         session.xenapi.VDI.set_physical_utilisation(
             vdi_ref, str(stats["physical_utilisation"]))
     # Update the on-disk name and description if needed
+    name = session.xenapi.VDI.get_name_label(vdi_ref)
     if name != stats['name']:
-        Volume().set_name(dbg, sr_uuid, vdi_uuid, name)
+        Volume().set_name(dbg, sr_string, vdi_uuid, name)
+    description = session.xenapi.VDI.get_name_description(vdi_ref)
     if description != stats['description']:
-        Volume().set_description(dbg, sr_uuid, vdi_uuid, description)
+        Volume().set_description(dbg, sr_string, vdi_uuid, description)
 
 
 def gen_uuid():
