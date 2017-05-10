@@ -22,11 +22,11 @@ import errno
 import exceptions
 import fcntl
 import json
-import subprocess
 import sys
 import syslog
 import os
 import traceback
+import uuid
 import xapi.storage.api.volume.Unimplemented  # pylint: disable=import-error
 import xmlrpclib
 import XenAPI
@@ -44,7 +44,7 @@ def log(message):
     syslog.closelog()
 
 
-def _db_introduce_vdi(session, sr_uuid, volume, uuid):
+def _db_introduce_vdi(session, sr_uuid, volume, vdi_uuid):
     sm_config = {}
     volume_type = "user"
     is_a_snapshot = False
@@ -55,7 +55,7 @@ def _db_introduce_vdi(session, sr_uuid, volume, uuid):
     sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
     read_only = False
     managed = True
-    session.xenapi.VDI.db_introduce(uuid,
+    session.xenapi.VDI.db_introduce(vdi_uuid,
                                     volume['name'],
                                     volume['description'],
                                     sr_ref,
@@ -75,8 +75,8 @@ def _db_introduce_vdi(session, sr_uuid, volume, uuid):
                                     snapshot_of)
 
 
-def _db_forget_vdi(session, uuid):
-    vdi = session.xenapi.VDI.get_by_uuid(uuid)
+def _db_forget_vdi(session, vdi_uuid):
+    vdi = session.xenapi.VDI.get_by_uuid(vdi_uuid)
     session.xenapi.VDI.db_forget(vdi)
 
 
@@ -132,8 +132,7 @@ def _vdi_update(session, dbg, volume_implementation, sr_uuid, vdi_uuid):
 
 
 def gen_uuid():
-    return subprocess.Popen(["uuidgen", "-r"],
-                            stdout=subprocess.PIPE).communicate()[0].strip()
+    return str(uuid.uuid4())
 
 
 def _write_to_store(sr_uuid, update):
@@ -274,7 +273,7 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             sr_implementation().detach(dbg, sr_string)
             _wipe_store(sr_uuid)
             print nil
-        elif cmd == '_sr_update':
+        elif cmd == 'sr_update':
             sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
             _sr_update(session, dbg, sr_implementation, sr_uuid, sr_ref)
             print nil
@@ -289,14 +288,14 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             sr_string = _read_from_store(sr_uuid, 'sr_string')
             v = volume_implementation().create(dbg, sr_string, name,
                                                description, size)
-            uuid = gen_uuid()
-            _db_introduce_vdi(session, sr_uuid, v, uuid)
+            vdi_uuid = gen_uuid()
+            _db_introduce_vdi(session, sr_uuid, v, vdi_uuid)
             struct = {
                 'location': v['uri'][0],
-                'uuid': uuid
+                'uuid': vdi_uuid
             }
-            log("Introducing VDI %s" % uuid)
-            _write_to_store(sr_uuid, {uuid: v['key']})
+            log("Introducing VDI %s" % vdi_uuid)
+            _write_to_store(sr_uuid, {vdi_uuid: v['key']})
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_delete':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
@@ -307,22 +306,22 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             sr_string = _read_from_store(sr_uuid, 'sr_string')
             vdi_string = _read_from_store(sr_uuid, vdi_uuid)
             v = volume_implementation().clone(dbg, sr_string, vdi_string)
-            uuid = gen_uuid()
-            _db_introduce_vdi(session, sr_uuid, v, uuid)
+            vdi_uuid = gen_uuid()
+            _db_introduce_vdi(session, sr_uuid, v, vdi_uuid)
             struct = {
                 'location': v.uri,
-                'uuid': uuid
+                'uuid': vdi_uuid
             }
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_snapshot':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
             vdi_string = _read_from_store(sr_uuid, vdi_uuid)
             v = volume_implementation().snapshot(dbg, sr_string, vdi_string)
-            uuid = gen_uuid()
+            vdi_uuid = gen_uuid()
             _db_introduce_vdi(session, sr_uuid, v, uuid)
             struct = {
                 'location': v.uri,
-                'uuid': uuid
+                'uuid': vdi_uuid
             }
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_attach':
