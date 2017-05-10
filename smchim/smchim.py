@@ -27,7 +27,7 @@ import syslog
 import os
 import traceback
 import uuid
-import xapi.storage.api.volume.Unimplemented  # pylint: disable=import-error
+import xapi.storage.api.volume  # pylint: disable=import-error
 import xmlrpclib
 import XenAPI
 
@@ -90,7 +90,7 @@ def _sr_update(session, dbg, sr_implementation, sr_uuid, sr_ref):
     session.xenapi.SR.set_physical_size(
         sr_ref, str(stats["total_space"]))
     session.xenapi.SR.set_physical_utilisation(
-        sr_ref, str(stats["total_space"]-stats["free_space"]))
+        sr_ref, str(stats["total_space"] - stats["free_space"]))
     # Update the on-disk name and description if needed
     name = session.xenapi.SR.get_name_label(sr_ref)
     if name != stats['name']:
@@ -112,7 +112,6 @@ def _vdi_update(session, dbg, volume_implementation, sr_uuid, vdi_uuid):
     vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
     sr_string = _read_from_store(sr_uuid, 'sr_uuid')
     vdi_string = _read_from_store(sr_uuid, vdi_uuid)
-    log("sr_uuid:%s vdi_uuid:%s sr_string:%s" % (sr_uuid, vdi_uuid, sr_string))
     # Get volume stats and update XAPI
     stats = volume_implementation().stat(dbg, sr_string, vdi_string)
     if 'virtual_size' in stats:
@@ -145,11 +144,12 @@ def _write_to_store(sr_uuid, update):
         # directory may exist already
         pass
     file_path = os.path.join(STORE_PATH, sr_uuid)
-    with open(file_path, "w+") as file_pointer:
+    with open(file_path, "a+") as file_pointer:
         fcntl.flock(file_pointer.fileno(), fcntl.LOCK_EX)
-        contents = file_pointer.read()
-        if contents:
-            contents = json.loads(contents)
+        file_pointer.seek(0)
+        json_contents = file_pointer.read()
+        if json_contents:
+            contents = json.loads(json_contents)
         else:
             contents = {}
         for key, value in update.iteritems():
@@ -157,9 +157,10 @@ def _write_to_store(sr_uuid, update):
                 contents[key] = value
             elif key in contents:
                 del contents[key]
+        json_contents = json.dumps(contents)
         file_pointer.seek(0)
-        file_pointer.write(json.dumps(contents))
         file_pointer.truncate()
+        file_pointer.write(json_contents)
         fcntl.flock(file_pointer.fileno(), fcntl.LOCK_UN)
 
 
@@ -240,7 +241,7 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
         elif cmd == 'sr_scan':
             sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
             vdis = session.xenapi.VDI.get_all_records_where(
-                "field \"sr_implementation\" = \"%s\"" % sr_ref)
+                "field \"SR\" = \"%s\"" % sr_ref)
             xenapi_location_map = {}
             for vdi in vdis.keys():
                 xenapi_location_map[vdis[vdi]['location']] = vdis[vdi]
