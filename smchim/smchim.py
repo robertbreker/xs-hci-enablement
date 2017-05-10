@@ -131,8 +131,11 @@ def _vdi_update(session, dbg, volume_implementation, sr_uuid, vdi_uuid):
                                                 description)
 
 
-def gen_uuid():
-    return str(uuid.uuid4())
+def get_or_make_uuid(volume):
+    if volume['uuid']:
+        return volume['uuid']
+    else:
+        return str(uuid.uuid4())
 
 
 def _write_to_store(sr_uuid, update):
@@ -250,7 +253,7 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             volume_locations = set(volume_location_map.keys())
             store_update = {}
             for new in volume_locations.difference(xenapi_locations):
-                vdi_uuid = gen_uuid()
+                vdi_uuid = get_or_make_uuid(volume_location_map[new])
                 _db_introduce_vdi(session, sr_uuid, volume_location_map[new],
                                   vdi_uuid)
                 store_update[vdi_uuid] = volume_location_map[new]['key']
@@ -286,16 +289,16 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             description = params['args'][2]
             # read_only = params['args'][7] == "true"
             sr_string = _read_from_store(sr_uuid, 'sr_string')
-            v = volume_implementation().create(dbg, sr_string, name,
-                                               description, size)
-            vdi_uuid = gen_uuid()
-            _db_introduce_vdi(session, sr_uuid, v, vdi_uuid)
+            volume = volume_implementation().create(dbg, sr_string, name,
+                                                    description, size)
+            vdi_uuid = get_or_make_uuid(volume)
+            _db_introduce_vdi(session, sr_uuid, volume, vdi_uuid)
             struct = {
-                'location': v['uri'][0],
+                'location': volume['uri'][0],
                 'uuid': vdi_uuid
             }
             log("Introducing VDI %s" % vdi_uuid)
-            _write_to_store(sr_uuid, {vdi_uuid: v['key']})
+            _write_to_store(sr_uuid, {vdi_uuid: volume['key']})
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_delete':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
@@ -305,22 +308,23 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
         elif cmd == 'vdi_clone':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
             vdi_string = _read_from_store(sr_uuid, vdi_uuid)
-            v = volume_implementation().clone(dbg, sr_string, vdi_string)
-            vdi_uuid = gen_uuid()
-            _db_introduce_vdi(session, sr_uuid, v, vdi_uuid)
+            volume = volume_implementation().clone(dbg, sr_string, vdi_string)
+            vdi_uuid = get_or_make_uuid(volume)
+            _db_introduce_vdi(session, sr_uuid, volume, vdi_uuid)
             struct = {
-                'location': v.uri,
+                'location': volume.uri,
                 'uuid': vdi_uuid
             }
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_snapshot':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
             vdi_string = _read_from_store(sr_uuid, vdi_uuid)
-            v = volume_implementation().snapshot(dbg, sr_string, vdi_string)
-            vdi_uuid = gen_uuid()
-            _db_introduce_vdi(session, sr_uuid, v, uuid)
+            volume = volume_implementation().snapshot(dbg, sr_string,
+                                                      vdi_string)
+            vdi_uuid = get_or_make_uuid(volume)
+            _db_introduce_vdi(session, sr_uuid, volume, uuid)
             struct = {
-                'location': v.uri,
+                'location': volume.uri,
                 'uuid': vdi_uuid
             }
             print xmlrpclib.dumps((struct,), "", True)
