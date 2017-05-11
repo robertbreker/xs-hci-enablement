@@ -120,6 +120,9 @@ def sr_scan(dbg, session, sr_implementation, sr_uuid):
     volumes = sr_implementation().ls(dbg, sr_string)
     volume_location_map = {}
     for volume in volumes:
+        # Workaround bug in ffs - spare slash
+        # https://github.com/xapi-project/ffs/pull/61
+        volume['uri'][0] = volume['uri'][0].replace("////", "///")
         volume_location_map[volume['uri'][0]] = volume
     xenapi_locations = set(xenapi_location_map.keys())
     volume_locations = set(volume_location_map.keys())
@@ -317,7 +320,6 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
                 'location': volume['uri'][0],
                 'uuid': vdi_uuid
             }
-            log("Introducing VDI %s" % vdi_uuid)
             _write_to_store(sr_uuid, {vdi_uuid: volume['key']})
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_delete':
