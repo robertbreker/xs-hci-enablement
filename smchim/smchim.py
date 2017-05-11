@@ -195,9 +195,11 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             query_result = plugin_implementation().query(dbg)
             for key in ['name', 'description', 'vendor', 'copyright']:
                 results[key] = query_result[key]
-            results['name'] = 'magic'
-            results['vendor'] = 'Citrix'
-            results['key'] = 'container'
+            drivername = os.path.basename(sys.argv[0])
+            if drivername[-2:] != 'SR':
+                raise Exception('%s name needs to end with SR')
+            drivername = drivername[:-2]
+            results['name'] = drivername
             results['driver_version'] = query_result['version']
             results['capabilities'] = query_result['features']
             # SMAPIv1 uses VDI_DELETE instead of VDI_DESTROY
