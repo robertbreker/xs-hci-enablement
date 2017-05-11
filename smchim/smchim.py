@@ -125,7 +125,7 @@ def sr_scan(dbg, session, sr_implementation, sr_uuid):
     volume_locations = set(volume_location_map.keys())
     store_update = {}
     for new in volume_locations.difference(xenapi_locations):
-        vdi_uuid = get_or_make_uuid(volume_location_map[new])
+        vdi_uuid = gen_uuid(volume_location_map[new])
         _db_introduce_vdi(session, sr_uuid, volume_location_map[new],
                           vdi_uuid)
         store_update[vdi_uuid] = volume_location_map[new]['key']
@@ -161,11 +161,8 @@ def _vdi_update(session, dbg, volume_implementation, sr_uuid, vdi_uuid):
                                                 description)
 
 
-def get_or_make_uuid(volume):
-    if volume['uuid']:
-        return volume['uuid']
-    else:
-        return str(uuid.uuid4())
+def gen_uuid(volume):
+    return str(uuid.uuid4())
 
 
 def _write_to_store(sr_uuid, update):
@@ -311,7 +308,7 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             sr_string = _read_from_store(sr_uuid, 'sr_string')
             volume = volume_implementation().create(dbg, sr_string, name,
                                                     description, size)
-            vdi_uuid = get_or_make_uuid(volume)
+            vdi_uuid = gen_uuid(volume)
             _db_introduce_vdi(session, sr_uuid, volume, vdi_uuid)
             struct = {
                 'location': volume['uri'][0],
@@ -327,7 +324,7 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
         elif cmd == 'vdi_clone':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
             volume = volume_implementation().clone(dbg, sr_string, vdi_string)
-            vdi_uuid = get_or_make_uuid(volume)
+            vdi_uuid = gen_uuid(volume)
             _db_introduce_vdi(session, sr_uuid, volume, vdi_uuid)
             struct = {
                 'location': volume.uri,
@@ -338,7 +335,7 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             sr_string = _read_from_store(sr_uuid, 'sr_string')
             volume = volume_implementation().snapshot(dbg, sr_string,
                                                       vdi_string)
-            vdi_uuid = get_or_make_uuid(volume)
+            vdi_uuid = gen_uuid(volume)
             _db_introduce_vdi(session, sr_uuid, volume, uuid)
             struct = {
                 'location': volume.uri,
