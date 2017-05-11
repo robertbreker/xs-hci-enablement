@@ -18,6 +18,8 @@
          style SRs
 """
 
+# pylint: disable=missing-docstring
+
 import errno
 import exceptions
 import fcntl
@@ -30,7 +32,6 @@ import uuid
 import xapi.storage.api.volume  # pylint: disable=import-error
 import xmlrpclib
 import XenAPI
-
 
 STORE_PATH = "/var/run/smchim/"
 MIN_VDI_SIZE = 512  # 512 bytes
@@ -108,6 +109,36 @@ def _sr_update(session, dbg, sr_implementation, sr_uuid, sr_ref):
             pass
 
 
+def sr_scan(dbg, session, sr_implementation, sr_uuid):
+    sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
+    vdis = session.xenapi.VDI.get_all_records_where(
+        "field \"SR\" = \"%s\"" % sr_ref)
+    xenapi_location_map = {}
+    for vdi in vdis.keys():
+        xenapi_location_map[vdis[vdi]['location']] = vdis[vdi]
+    sr_string = _read_from_store(sr_uuid, 'sr_string')
+    volumes = sr_implementation().ls(dbg, sr_string)
+    volume_location_map = {}
+    for volume in volumes:
+        volume_location_map[volume['uri'][0]] = volume
+    xenapi_locations = set(xenapi_location_map.keys())
+    volume_locations = set(volume_location_map.keys())
+    store_update = {}
+    for new in volume_locations.difference(xenapi_locations):
+        vdi_uuid = get_or_make_uuid(volume_location_map[new])
+        _db_introduce_vdi(session, sr_uuid, volume_location_map[new],
+                          vdi_uuid)
+        store_update[vdi_uuid] = volume_location_map[new]['key']
+    for gone in xenapi_locations.difference(volume_locations):
+        _db_forget_vdi(session, xenapi_location_map[gone]['uuid'])
+        store_update[xenapi_location_map[gone]['uuid']] = None
+    for existing in volume_locations.intersection(xenapi_locations):
+        key = volume_location_map[existing]['key']
+        store_update[xenapi_location_map[existing]['uuid']] = key
+    _write_to_store(sr_uuid, store_update)
+    _sr_update(session, dbg, sr_implementation, sr_uuid, sr_ref)
+
+
 def _vdi_update(session, dbg, volume_implementation, sr_uuid, vdi_uuid):
     vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
     sr_string = _read_from_store(sr_uuid, 'sr_uuid')
@@ -164,6 +195,10 @@ def _write_to_store(sr_uuid, update):
         fcntl.flock(file_pointer.fileno(), fcntl.LOCK_UN)
 
 
+class StoreKeyNotFound(BaseException):
+    pass
+
+
 def _read_from_store(sr_uuid, key):
     file_path = os.path.join(STORE_PATH, sr_uuid)
     with open(file_path) as file_pointer:
@@ -172,7 +207,7 @@ def _read_from_store(sr_uuid, key):
         fcntl.flock(file_pointer.fileno(), fcntl.LOCK_UN)
     data = json.loads(contents)
     if key not in data:
-        raise Exception("Unknown key: %s" % (key))
+        raise StoreKeyNotFound("Unknown key: %s" % (key))
     return data[key]
 
 
@@ -215,16 +250,24 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             sys.exit(0)
 
         params = params[0]
+        session = XenAPI.xapi_local()
+        ref = params['session_ref']
+        session._session = ref  # pylint: disable=protected-access
         dconf = params['device_config']
         if 'sr_uuid' in params:
             sr_uuid = params['sr_uuid']
         if 'vdi_uuid' in params:
             vdi_uuid = params['vdi_uuid']
+            try:
+                vdi_string = _read_from_store(sr_uuid, vdi_uuid)
+            except StoreKeyNotFound:
+                # We can get here, if a VDI was created on a different host.
+                # or if sr_scan was never run on this host.
+                # Let's do an sr_scan to refresh the store and try again.
+                sr_scan(dbg, session, sr_implementation, sr_uuid)
+                vdi_string = _read_from_store(sr_uuid, vdi_uuid)
         if 'vdi_location' in params:
             vdi_location = params['vdi_location']
-
-        session = XenAPI.xapi_local()
-        session._session = params['session_ref']
 
         nil = xmlrpclib.dumps((None,), "", True, allow_none=True)
         if cmd == 'sr_create':
@@ -241,33 +284,7 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             _db_forget_vdi(session, vdi_uuid)
             print nil
         elif cmd == 'sr_scan':
-            sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
-            vdis = session.xenapi.VDI.get_all_records_where(
-                "field \"SR\" = \"%s\"" % sr_ref)
-            xenapi_location_map = {}
-            for vdi in vdis.keys():
-                xenapi_location_map[vdis[vdi]['location']] = vdis[vdi]
-            sr_string = _read_from_store(sr_uuid, 'sr_string')
-            volumes = sr_implementation().ls(dbg, sr_string)
-            volume_location_map = {}
-            for volume in volumes:
-                volume_location_map[volume['uri'][0]] = volume
-            xenapi_locations = set(xenapi_location_map.keys())
-            volume_locations = set(volume_location_map.keys())
-            store_update = {}
-            for new in volume_locations.difference(xenapi_locations):
-                vdi_uuid = get_or_make_uuid(volume_location_map[new])
-                _db_introduce_vdi(session, sr_uuid, volume_location_map[new],
-                                  vdi_uuid)
-                store_update[vdi_uuid] = volume_location_map[new]['key']
-            for gone in xenapi_locations.difference(volume_locations):
-                _db_forget_vdi(session, xenapi_location_map[gone]['uuid'])
-                store_update[xenapi_location_map[gone]['uuid']] = None
-            for existing in volume_locations.intersection(xenapi_locations):
-                key = volume_location_map[existing]['key']
-                store_update[xenapi_location_map[existing]['uuid']] = key
-            _write_to_store(sr_uuid, store_update)
-            _sr_update(session, dbg, sr_implementation, sr_uuid, sr_ref)
+            sr_scan(dbg, session, sr_implementation, sr_uuid)
             print nil
         elif cmd == 'sr_attach':
             uri = ''
@@ -305,12 +322,10 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_delete':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
-            vdi_string = _read_from_store(sr_uuid, vdi_uuid)
             volume_implementation().destroy(dbg, sr_string, vdi_string)
             print nil
         elif cmd == 'vdi_clone':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
-            vdi_string = _read_from_store(sr_uuid, vdi_uuid)
             volume = volume_implementation().clone(dbg, sr_string, vdi_string)
             vdi_uuid = get_or_make_uuid(volume)
             _db_introduce_vdi(session, sr_uuid, volume, vdi_uuid)
@@ -321,7 +336,6 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             print xmlrpclib.dumps((struct,), "", True)
         elif cmd == 'vdi_snapshot':
             sr_string = _read_from_store(sr_uuid, 'sr_string')
-            vdi_string = _read_from_store(sr_uuid, vdi_uuid)
             volume = volume_implementation().snapshot(dbg, sr_string,
                                                       vdi_string)
             vdi_uuid = get_or_make_uuid(volume)
@@ -350,7 +364,6 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
         elif cmd == 'vdi_resize':
             size = long(params['args'][0])
             sr_string = _read_from_store(sr_uuid, 'sr_string')
-            vdi_string = _read_from_store(sr_uuid, vdi_uuid)
             volume_implementation().resize(dbg, sr_string, vdi_string, size)
             sr_ref = session.xenapi.SR.get_by_uuid(sr_uuid)
             vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
