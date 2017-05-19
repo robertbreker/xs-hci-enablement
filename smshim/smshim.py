@@ -15,7 +15,7 @@
  51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
  plugin: A SMAPIv3 to SMAPIv1 conversion layer that allows writing SMAPIv3
-         style SRs
+         style SRs, while actually using SMAPIv1
 """
 
 # pylint: disable=missing-docstring
@@ -144,7 +144,7 @@ def sr_scan(dbg, session, sr_implementation, sr_uuid):
 
 def _vdi_update(session, dbg, volume_implementation, sr_uuid, vdi_uuid):
     vdi_ref = session.xenapi.VDI.get_by_uuid(vdi_uuid)
-    sr_string = _read_from_store(sr_uuid, 'sr_uuid')
+    sr_string = _read_from_store(sr_uuid, 'sr_string')
     vdi_string = _read_from_store(sr_uuid, vdi_uuid)
     # Get volume stats and update XAPI
     stats = volume_implementation().stat(dbg, sr_string, vdi_string)
@@ -157,10 +157,13 @@ def _vdi_update(session, dbg, volume_implementation, sr_uuid, vdi_uuid):
     # Update the on-disk name and description if needed
     name = session.xenapi.VDI.get_name_label(vdi_ref)
     if name != stats['name']:
-        volume_implementation().set_name(dbg, sr_string, vdi_uuid, name)
+        log("set_name")
+        volume_implementation().set_name(dbg, sr_string, vdi_string, name)
     description = session.xenapi.VDI.get_name_description(vdi_ref)
+    log("update")
     if description != stats['description']:
-        volume_implementation().set_description(dbg, sr_string, vdi_uuid,
+        log("set_description")
+        volume_implementation().set_description(dbg, sr_string, vdi_string,
                                                 description)
 
 
@@ -375,7 +378,7 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
             struct = {'location': vdi_location,
                       'uuid': vdi_uuid}
             print xmlrpclib.dumps((struct,), "", True)
-        elif cmd == '_vdi_update':
+        elif cmd == 'vdi_update':
             _vdi_update(session, dbg, volume_implementation, sr_uuid, vdi_uuid)
             print nil
         elif cmd in ['vdi_epoch_begin', 'vdi_epoch_end']:
@@ -386,14 +389,13 @@ def main(plugin_implementation, sr_implementation, volume_implementation,
                                     "",
                                     True)
             print xmlrpclib.dumps(fault)
-    except Exception, e:
+    except Exception as exception:
         info = sys.exc_info()
         if info[0] == exceptions.SystemExit:
             sys.exit(0)
         trace = "\n".join(traceback.format_tb(info[2]))
-        fault = xmlrpclib.Fault(int(errno.EINVAL), str(e) + "\n" + trace)
-        # errmsg = xmlrpclib.dumps(xmlrpclib.Fault(int(errno.EINVAL),
-        #                          str(e)), "", True)
+        fault = xmlrpclib.Fault(int(errno.EINVAL),
+                                str(exception) + "\n" + trace)
         error_xml = xmlrpclib.dumps(fault, "", True)
         log(error_xml)
         print error_xml
